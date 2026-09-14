@@ -4,18 +4,6 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 type QueryParameter = string | number | boolean | null | Buffer | Date;
 
 /**
- * A single shared connection pool for the whole app. In Next.js dev mode,
- * modules can be re-evaluated on every hot reload, which would otherwise
- * create a fresh pool (and fresh TCP connections) on every file save —
- * so the pool is cached on `globalThis`, the same pattern commonly used
- * for Prisma clients in Next.js apps.
- */
-declare global {
-  // eslint-disable-next-line no-var
-  var __tinytodsPool: mysql.Pool | undefined;
-}
-
-/**
  * Resolves the MySQL connection string.
  *
  * On Cloudflare (production/preview builds), the connection comes from
@@ -55,24 +43,12 @@ function getConnectionString(): string {
   return `mysql://${DB_USER}:${encodeURIComponent(DB_PASSWORD)}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
 }
 
-function createPool(): mysql.Pool {
-  return mysql.createPool({
+export function getConnection(): Promise<mysql.Connection> {
+  return mysql.createConnection({
     uri: getConnectionString(),
-    waitForConnections: true,
-    // Hyperdrive already pools connections on Cloudflare's side, so keep this low.
-    connectionLimit: 5,
-    maxIdle: 5,
-    idleTimeout: 60000,
     dateStrings: true,
     disableEval: true,
   });
-}
-
-export function getPool(): mysql.Pool {
-  if (!global.__tinytodsPool) {
-    global.__tinytodsPool = createPool();
-  }
-  return global.__tinytodsPool;
 }
 
 /**
@@ -80,9 +56,13 @@ export function getPool(): mysql.Pool {
  * directly — services just call `query<Row>(sql, params)`.
  */
 export async function query<T = unknown>(sql: string, params: QueryParameter[] = []): Promise<T[]> {
-  const pool = getPool();
-  const [rows] = await pool.query(sql, params);
-  return rows as T[];
+  const connection = await getConnection();
+  try {
+    const [rows] = await connection.query(sql, params);
+    return rows as T[];
+  } finally {
+    await connection.end();
+  }
 }
 
 /** For INSERT/UPDATE/DELETE, where you need affectedRows/insertId instead of row data. */
@@ -90,7 +70,11 @@ export async function execute(
   sql: string,
   params: QueryParameter[] = []
 ): Promise<mysql.ResultSetHeader> {
-  const pool = getPool();
-  const [result] = await pool.execute(sql, params);
-  return result as mysql.ResultSetHeader;
+  const connection = await getConnection();
+  try {
+    const [result] = await connection.execute(sql, params);
+    return result as mysql.ResultSetHeader;
+  } finally {
+    await connection.end();
+  }
 }

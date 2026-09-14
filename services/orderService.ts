@@ -1,4 +1,4 @@
-import { query, execute, getPool } from "@/lib/db";
+import { query, execute, getConnection } from "@/lib/db";
 import { CartItem, CreateOrderInput, OrderItemRecord, OrderRecord, OrderStatus } from "@/types";
 import {
   getCartSubtotal,
@@ -129,8 +129,7 @@ export const OrderService = {
     const grandTotal = getCartTotal(items);
     const orderNumber = generateOrderNumber();
 
-    const pool = getPool();
-    const connection = await pool.getConnection();
+    const connection = await getConnection();
     try {
       await connection.beginTransaction();
 
@@ -184,7 +183,7 @@ export const OrderService = {
       await connection.rollback();
       throw error;
     } finally {
-      connection.release();
+      await connection.end();
     }
   },
 
