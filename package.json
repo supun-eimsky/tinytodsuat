@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "db:seed": "mysql -u root -p tinytods < database/schema.sql && mysql -u root -p tinytods < database/seed.sql"
   },
   "dependencies": {
