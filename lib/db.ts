@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import fs from "fs";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 type QueryParameter = string | number | boolean | null | Buffer | Date;
 
@@ -16,70 +16,52 @@ declare global {
 }
 
 /**
- * AWS RDS (and most managed MySQL hosts) require or strongly recommend
- * TLS. Controlled by env vars so local MySQL (no SSL) and RDS (SSL) both
- * work with the same code:
- *   DB_SSL=true                 -> enables SSL
- *   DB_SSL_CA_PATH=./rds-ca.pem -> optional path to a CA bundle file, e.g.
- *                                  one downloaded from AWS (see README).
- *   DB_SSL_CA="-----BEGIN..."   -> optional: the CA bundle's contents
- *                                  pasted directly into an env var instead
- *                                  of a file. Use this on hosts with a
- *                                  read-only/ephemeral filesystem at
- *                                  runtime (e.g. Vercel), where there's
- *                                  nowhere to save a .pem file for
- *                                  DB_SSL_CA_PATH to point at. Most hosts'
- *                                  env var UIs accept multi-line values
- *                                  fine — paste the whole file contents in
- *                                  as-is, including the BEGIN/END lines.
- *   (neither set)                -> Node's built-in trust store is used,
- *                                  which works for RDS's default certs in
- *                                  most setups.
+ * Resolves the MySQL connection string.
  *
- * The return type is derived from mysql.createPool's own parameter type
- * rather than importing a named SSL-options type, since that name isn't
- * guaranteed stable across mysql2 versions/entry points — this way it's
- * always exactly what createPool expects.
+ * On Cloudflare (production/preview builds), the connection comes from
+ * the Hyperdrive binding. Hyperdrive terminates TLS to RDS on its side,
+ * so no SSL config or CA bundle is needed here — passing one (or trying
+ * to read one from disk) will fail, since Workers has no real filesystem
+ * at runtime.
+ *
+ * In plain local Node.js dev (`next dev`, no Cloudflare context), this
+ * falls back to DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME from
+ * .env.local instead.
  */
-type PoolSslOption = NonNullable<Parameters<typeof mysql.createPool>[0]>["ssl"];
-
-function buildSslConfig(): PoolSslOption {
-  if (process.env.DB_SSL !== "true") return undefined;
-
-  if (process.env.DB_SSL_CA) {
-    return { ca: process.env.DB_SSL_CA };
+function getConnectionString(): string {
+  try {
+    const { env } = getCloudflareContext();
+    if (env.HYPERDRIVE?.connectionString) {
+      return env.HYPERDRIVE.connectionString;
+    }
+  } catch {
+    // Not running inside a Cloudflare context (e.g. plain `next dev`) — fall through.
   }
-  if (process.env.DB_SSL_CA_PATH) {
-    return { ca: fs.readFileSync(process.env.DB_SSL_CA_PATH, "utf8") };
-  }
-  return { rejectUnauthorized: true };
-}
 
-function createPool(): mysql.Pool {
   const {
     DB_HOST = "localhost",
     DB_PORT = "3306",
     DB_USER,
-    DB_PASSWORD,
+    DB_PASSWORD = "",
     DB_NAME,
   } = process.env;
 
   if (!DB_USER || !DB_NAME) {
     throw new Error(
-      "Missing database configuration. Set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD and DB_NAME in your .env.local (see .env.example)."
+      "Missing database configuration. Set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD and DB_NAME in your .env.local (see .env.example), or configure the HYPERDRIVE binding for Cloudflare."
     );
   }
 
+  return `mysql://${DB_USER}:${encodeURIComponent(DB_PASSWORD)}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
+}
+
+function createPool(): mysql.Pool {
   return mysql.createPool({
-    host: DB_HOST,
-    port: Number(DB_PORT),
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: DB_NAME,
-    ssl: buildSslConfig(),
+    uri: getConnectionString(),
     waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 10,
+    // Hyperdrive already pools connections on Cloudflare's side, so keep this low.
+    connectionLimit: 5,
+    maxIdle: 5,
     idleTimeout: 60000,
     dateStrings: true,
   });
