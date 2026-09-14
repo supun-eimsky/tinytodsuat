@@ -40,7 +40,7 @@ export default function AboutPage() {
         <DecoHeart className="absolute bottom-10 right-[12%] w-5 h-5 hidden sm:block" color="#6DBFD8" />
         <div className="container-content grid lg:grid-cols-2 gap-12 items-center">
           <div className="text-center lg:text-left">
-            <h1 className="font-display text-4xl sm:text-5xl text-teal-800">Our Story</h1>
+            <h1 className="font-display text-4xl sm:text-5xl text-teal-800">Our Story rrr</h1>
             <p className="mt-5 text-teal-700/70 leading-relaxed max-w-lg mx-auto lg:mx-0">
               TinyTods began with a simple wish: to make it easy for parents to find
               products that feel as caring as they look. What started as a small
