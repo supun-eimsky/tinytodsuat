@@ -64,6 +64,7 @@ function createPool(): mysql.Pool {
     maxIdle: 5,
     idleTimeout: 60000,
     dateStrings: true,
+    disableEval: true,
   });
 }
 
