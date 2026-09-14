@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { admin, token } = await loginAdmin(body?.email, body?.password);
-console.log('ol')
+
     const response = NextResponse.json({ admin });
     response.cookies.set(ADMIN_SESSION_COOKIE.name, token, {
       httpOnly: true,
